@@ -77,11 +77,30 @@ To train the model on your dataset:
 python train.py
 ```
 
+**Advanced Training Options:**
+
+```bash
+# Train with custom parameters
+python train.py --epochs 100 --batch_size 16 --learning_rate 0.0002
+
+# Resume training from checkpoint
+python train.py --resume models/generator_checkpoint.pt
+
+# Train with specific GPU
+CUDA_VISIBLE_DEVICES=0 python train.py
+```
+
 The training script will:
 - Load paired SAR and RGB images from the dataset directory
 - Initialize the generator model
 - Train using the specified hyperparameters
-- Save model checkpoints and training logs
+- Save model checkpoints and training logs to `models/` directory
+- Log training metrics to TensorBoard in `runs/` directory
+
+**Monitoring Training Progress:**
+- Loss curves and sample outputs are logged every 100 iterations
+- Model checkpoints are saved every 10 epochs
+- Best model is automatically saved based on validation loss
 
 ### Inference
 
@@ -91,6 +110,38 @@ To colorize new SAR images:
 python predict.py
 ```
 
+**Detailed Inference Examples:**
+
+```bash
+# Colorize a single image
+python predict.py --input path/to/sar_image.png --output colorized_output.jpg
+
+# Batch process multiple images
+python predict.py --input_dir sar_images/ --output_dir colorized_results/
+
+# Use specific model checkpoint
+python predict.py --model models/custom_generator.pt --input image.png
+
+# Adjust output quality and size
+python predict.py --input image.png --output result.jpg --quality 95 --resize 1024
+```
+
+**Programmatic Usage:**
+
+```python
+from model import SARModel
+from predict import colorize_image
+import torch
+
+# Load pre-trained model
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = SARModel(device)
+model.load_state_dict(torch.load('models/generator.pt'))
+
+# Colorize single image
+colorized = colorize_image(model, 'path/to/sar_image.png', device)
+```
+
 ### Using the Jupyter Notebook
 
 For interactive experimentation and model visualization:
@@ -98,6 +149,21 @@ For interactive experimentation and model visualization:
 ```bash
 jupyter notebook base.ipynb
 ```
+
+The notebook includes:
+- **Model Architecture Visualization**: View network structure and parameters
+- **Data Exploration**: Analyze dataset statistics and sample pairs
+- **Training Visualization**: Real-time loss plots and sample outputs
+- **Interactive Inference**: Test the model on custom inputs
+- **Result Analysis**: Compare original SAR images with colorized outputs
+
+**Notebook Sections:**
+1. **Setup & Dependencies**: Environment configuration and imports
+2. **Data Loading**: Dataset exploration and preprocessing
+3. **Model Definition**: Architecture details and summary
+4. **Training Loop**: Interactive training with live updates
+5. **Evaluation**: Model performance metrics and visual results
+6. **Custom Inference**: Test on your own SAR images
 
 ## Model Architecture
 
@@ -145,6 +211,38 @@ tensorboard --logdir=runs
 - **Minimum**: 4GB VRAM for training
 - **Optimal**: 8GB+ VRAM for larger batch sizes
 
+## Troubleshooting
+
+### Common Issues
+
+**CUDA Out of Memory:**
+```bash
+# Reduce batch size in training
+python train.py --batch_size 4
+
+# Use CPU for inference if GPU memory is limited
+python predict.py --device cpu
+```
+
+**Poor Colorization Results:**
+- Ensure SAR and RGB images are properly paired in the dataset
+- Check that input images are preprocessed correctly (normalized, resized)
+- Try training for more epochs or adjusting learning rate
+- Verify model checkpoint is loading correctly
+
+**Training Not Converging:**
+- Adjust learning rate (try 0.0001 or 0.0005)
+- Check data quality and alignment
+- Monitor discriminator/generator loss balance
+- Ensure sufficient dataset size (minimum 1000+ paired images recommended)
+
+### Performance Tips
+
+- Use mixed precision training for faster training: `--amp`
+- Enable data loading optimization: `--num_workers 4`
+- Use gradient accumulation for larger effective batch sizes
+- Implement learning rate scheduling for better convergence
+
 ## Contributing
 
 1. Fork the repository
@@ -152,6 +250,13 @@ tensorboard --logdir=runs
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+**Development Guidelines:**
+- Follow PEP 8 style guidelines
+- Add type hints to new functions
+- Include unit tests for new features
+- Update documentation for API changes
+- Test with both CPU and GPU environments
 
 ## License
 
