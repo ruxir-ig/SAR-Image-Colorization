@@ -26,12 +26,12 @@ class GeneratorModel(nn.Module):
         )
         self.db2 = nn.Sequential(
             LeakyReLU(),
-            Conv2d(128, 1256, kernel_size=2, stride=2),
-            BatchNorm2d(1256)
+            Conv2d(128, 256, kernel_size=2, stride=2),
+            BatchNorm2d(256)
         )
         self.db3 = nn.Sequential(
             LeakyReLU(),
-            Conv2d(1256, 512, kernel_size=2, stride=2),
+            Conv2d(256, 512, kernel_size=2, stride=2),
             BatchNorm2d(512)
         )
         self.db4 = nn.Sequential(
@@ -95,6 +95,10 @@ class GeneratorModel(nn.Module):
             ConvTranspose2d(64, 3, kernel_size=2, stride=2),
             Tanh()
         )
+        self.merge1 = Conv2d(1024, 512, kernel_size=1)
+        self.merge2 = Conv2d(512, 256, kernel_size=1)
+        self.merge3 = Conv2d(256, 128, kernel_size=1)
+        self.merge4 = Conv2d(128, 64, kernel_size=1)
 
     def forward(self, x):
         c1 = self.conv1(x)
@@ -116,24 +120,25 @@ class GeneratorModel(nn.Module):
         # g = self.generator(l)
         f = self.uf(l)
         # print(f"f shape is {f.shape}")
-        conv = Conv2d(1024, 512, kernel_size=1).to(device=self.device)
-        u1 = self.ub1(conv(torch.cat([f, d6], dim=1)))
+        # conv = Conv2d(1024, 512, kernel_size=1).to(device=self.device)
+        u1 = self.ub1(self.merge1(torch.cat([f, d6], dim=1)))
         # print(f"u1 shape is {u1.shape}")
-        u2 = self.ub2(conv(torch.concat([u1, d5], dim=1)))
+        u2 = self.ub2(self.merge1(torch.concat([u1, d5], dim=1)))
         # print(f"u2 shape is {u2.shape}")
-        u3 = self.ub3(conv(torch.concat([u2, d4], dim=1)))
+        u3 = self.ub3(self.merge1(torch.concat([u2, d4], dim=1)))
         # print(f"u3 shape is {u3.shape}")
-        u4 = self.ub4(conv(torch.concat([u3, d3], dim=1)))
+        u4 = self.ub4(self.merge1(torch.concat([u3, d3], dim=1)))
         # print(f"u4 shape is {u4.shape}")
-        conv2 = Conv2d(1512, 256, kernel_size=1).to(device=self.device)
-        u5 = self.ub5(conv2(torch.concat([u4, d2], dim=1)))
+        # conv2 = Conv2d(1512, 256, kernel_size=1).to(device=self.device)
+        u5 = self.ub5(self.merge2(torch.concat([u4, d2], dim=1)))
         # print(f"u5 shape is {u5.shape}")
-        conv3 = Conv2d(256, 128, kernel_size=1).to(device=self.device)
-        u6 = self.ub6(conv3(torch.concat([u5, d1], dim=1)))
+        # conv3 = Conv2d(256, 128, kernel_size=1).to(device=self.device)
+        u6 = self.ub6(self.merge3(torch.concat([u5, d1], dim=1)))
         # print(f"u6 shape is {u6.shape}")
-        c1_cropped = c1[:, :, :510, :510]
-        conv4 = Conv2d(128, 64, kernel_size=1).to(device=self.device)
-        u7 = self.ul(conv4(torch.concat([u6, c1_cropped], dim=1)))
+        # c1_cropped = c1[:, :, :510, :510] # hacky
+        c1_resized = F.interpolate(c1, size=u6.shape[2:])
+        # conv4 = Conv2d(128, 64, kernel_size=1).to(device=self.device)
+        u7 = self.ul(self.merge4(torch.concat([u6, c1_resized], dim=1)))
         # print(f"u7 shape is {u7.shape}")
         return u7
         
@@ -180,6 +185,7 @@ class SARModel():
         self.generator = GeneratorModel(device=device).to(device)
         self.discriminator = DiscriminatorModel().to(device)
         self.writer = SummaryWriter(f'runs/sar{int(time.time())}')
+        self.lambda_L1 = 100
 
         # Define optimizers
         self.gen_optimizer = torch.optim.Adam(self.generator.parameters(), lr=1e-3, betas=(0.5, 0.999))
@@ -222,7 +228,17 @@ class SARModel():
                 self.generator.zero_grad()
 
                 output_fake_for_gen = self.discriminator(grayscale_imgs, fake_imgs).view(-1)
-                gen_loss = self.criterion(output_fake_for_gen, torch.full_like(output_fake_for_gen, real_label, dtype=torch.float, device=self.device))
+
+                # STEP 1: define lambda at the top of SARModel.__init__
+                self.lambda_L1 = 100
+
+                # STEP 2: replace gen_loss calculation in train()
+                adv_loss = self.criterion(output_fake_for_gen,
+                                          torch.full_like(output_fake_for_gen, real_label, dtype=torch.float, device=self.device))
+
+                l1_loss = F.l1_loss(fake_imgs, rgb_imgs)
+
+                gen_loss = adv_loss + self.lambda_L1 * l1_loss
                 gen_loss.backward()
                 self.gen_optimizer.step()
 
